@@ -10,9 +10,27 @@ on:
 
 # Шаги workflow
 jobs:
-  # Сборка и тестирование проекта на разных ОС
+  # Сборка проекта на Linux
   build:
     # Тип runner'а, который будет использоваться для сборки проекта
+    runs-on: ubuntu-latest
+
+    # Шаги workflow сборки проекта
+    steps:
+      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
+      - uses: actions/checkout@v4
+      # Настроить Java 21 для сборки
+      - uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      # Запустить сборку без тестов и с распечаткой ошибок
+      - run: mvn clean install -DskipTests -e
+  # Тестирование проекта на разных ОС
+  test:
+    # Запуск тестов только после успешной сборки проекта
+    needs: build
+    # Тип runner'а, который будет использоваться для тестирования проекта
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -22,10 +40,10 @@ jobs:
     steps:
       # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
       - uses: actions/checkout@v4
-      # Настроить Java 21 для сборки и прогона тестов
+      # Настроить Java 21 для прогона тестов
       - uses: actions/setup-java@v3
         with:
           distribution: temurin
           java-version: 21
-      # Запустить сборку с тестами и распечаткой ошибок
-      - run: mvn clean install -e
+      # Запустить прогон тестов с распечаткой ошибок
+      - run: mvn test -e
