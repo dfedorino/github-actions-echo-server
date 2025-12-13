@@ -30,6 +30,7 @@
     </dependencies>
 
     <build>
+        <finalName>echo-server</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
