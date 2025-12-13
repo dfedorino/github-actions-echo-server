@@ -1,0 +1,31 @@
+name: CI/CD
+
+# События для запуска workflow
+on:
+  # Workflow будет запущен на пуш в ветку main или на pull-request в ветку main
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Шаги workflow
+jobs:
+  # Сборка и тестирование проекта на разных ОС
+  build:
+    # Тип runner'а, который будет использоваться для сборки проекта
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    # Шаги workflow сборки проекта
+    steps:
+      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
+      - uses: actions/checkout@v4
+      # Настроить Java 21 для сборки и прогона тестов
+      - uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      # Запустить сборку с тестами и распечаткой ошибок
+      - run: mvn clean install -e
