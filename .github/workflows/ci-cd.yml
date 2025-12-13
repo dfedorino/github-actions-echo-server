@@ -47,3 +47,45 @@ jobs:
           java-version: 21
       # Запустить прогон тестов с распечаткой ошибок
       - run: mvn test -e
+  # Тестирование проекта на разных ОС
+  deploy:
+    # Развёртывание приложения только после успешных тестов
+    needs: test
+    # Тип runner'а, который будет использоваться для тестирования проекта
+    runs-on: ubuntu-latest
+
+    # Шаги workflow развёртывания проекта
+    steps:
+      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
+      - uses: actions/checkout@v4
+      # Настроить Java 21 для прогона тестов
+      - uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      # Запустить сервер прямо на раннере (за неимением удалённого хоста для развёртывания)
+      - name: Start and test Echo Server
+        run: |
+          java -jar target/echo-server.jar > server.log 2>&1 &
+          SERVER_PID=$!
+          sleep 5
+          RESPONSE=$(curl -s http://localhost:8080/hello)
+          echo "Response: $RESPONSE"
+          if [ "$RESPONSE" != "hello" ]; then
+            echo "Server did not respond correctly"
+            kill $SERVER_PID
+            exit 1
+          fi
+          kill $SERVER_PID
+#      # Развёртывание на удалённом сервере с помощью SSH
+#      - name: Deploy to remote server
+#        uses: appleboy/ssh-action@v0.1.7
+#        with:
+#          host: ${{ secrets.REMOTE_HOST }}
+#          username: ${{ secrets.REMOTE_USER }}
+#          key: ${{ secrets.REMOTE_KEY }}
+#          script: |
+#            systemctl stop echo-server || true
+#            cp /home/deploy/echo-server.jar /opt/echo-server/echo-server.jar
+#            systemctl start echo-server
+#            curl -s http://localhost:8080/hello
