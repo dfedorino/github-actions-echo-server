@@ -10,8 +10,33 @@ on:
 
 # Шаги workflow
 jobs:
-  # Сборка проекта на Linux
-  build:
+  # Тестирование проекта на разных ОС
+  test:
+    # Тип runner'а, который будет использоваться для тестирования проекта
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+
+    # Шаги workflow сборки проекта
+    steps:
+      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
+      - uses: actions/checkout@v4
+      # Настроить Java 21 для прогона тестов
+      - uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      # Запустить прогон тестов с распечаткой ошибок
+      - run: mvn clean test -e
+  # Сборка проекта и публикация образа в реестре
+  install:
+    # Сборка и публикация только после успешных тестов
+    needs: test
+    # Данные для авторизации на хранилище образов GitHub Container Registry
+    env:
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
     # Тип runner'а, который будет использоваться для сборки проекта
     runs-on: ubuntu-latest
 
@@ -27,72 +52,26 @@ jobs:
       # Запустить сборку без тестов и с распечаткой ошибок
       - run: mvn clean install -DskipTests -e
   # Тестирование проекта на разных ОС
-  test:
-    # Запуск тестов только после успешной сборки проекта
-    needs: build
-    # Тип runner'а, который будет использоваться для тестирования проекта
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    # Шаги workflow сборки проекта
-    steps:
-      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
-      - uses: actions/checkout@v4
-      # Настроить Java 21 для прогона тестов
-      - uses: actions/setup-java@v3
-        with:
-          distribution: temurin
-          java-version: 21
-      # Запустить прогон тестов с распечаткой ошибок
-      - run: mvn test -e
-  # Тестирование проекта на разных ОС
   deploy:
-    # Развёртывание приложения только после успешных тестов
-    needs: test
+    # Развёртывание приложения только после успешной публикации образа
+    needs: install
     # Тип runner'а, который будет использоваться для тестирования проекта
     runs-on: ubuntu-latest
-
     # Шаги workflow развёртывания проекта
     steps:
-      # Клонировать репозиторий на раннер и сделать check-out на коммит, который вызвал workflow
-      - uses: actions/checkout@v4
-      # Настроить Java 21 для прогона тестов
-      - uses: actions/setup-java@v3
+      # Развёртывание на удалённом сервере с помощью SSH
+      - name: Deploy to remote server
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          distribution: temurin
-          java-version: 21
-      # Запустить сервер прямо на раннере (за неимением удалённого хоста для развёртывания)
-      - name: Start and test Echo Server
-        run: |
-          java -jar target/echo-server.jar > server.log 2>&1 &
-          SERVER_PID=$!
-          sleep 5
-          cat server.log
-          for i in {1..20}; do
-            if curl -sf http://localhost:8080/actuator/health | grep -q UP; then
-              break
-            fi
-            sleep 1
-          done
-          RESPONSE=$(curl -s http://localhost:8080/hello)
-          echo "Response: $RESPONSE"
-          if [ "$RESPONSE" != "hello" ]; then
-            echo "Server did not respond correctly"
-            kill $SERVER_PID
-            exit 1
-          fi
-          kill $SERVER_PID
-#      # Развёртывание на удалённом сервере с помощью SSH
-#      - name: Deploy to remote server
-#        uses: appleboy/ssh-action@v0.1.7
-#        with:
-#          host: ${{ secrets.REMOTE_HOST }}
-#          username: ${{ secrets.REMOTE_USER }}
-#          key: ${{ secrets.REMOTE_KEY }}
-#          script: |
-#            systemctl stop echo-server || true
-#            cp /home/deploy/echo-server.jar /opt/echo-server/echo-server.jar
-#            systemctl start echo-server
-#            curl -s http://localhost:8080/hello
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo docker login ghcr.io -u ${{ secrets.GHCR_USERNAME }} -p ${{ secrets.GHCR_TOKEN }}
+            sudo docker pull ghcr.io/dfedorino/github-actions-echo-server/echo-server:latest
+            sudo docker stop echo-server || true
+            sudo docker rm echo-server || true
+            sudo docker run -d \
+              --name echo-server \
+              -p 8080:8080 \
+              ghcr.io/dfedorino/github-actions-echo-server/echo-server:latest
